@@ -1,38 +1,50 @@
 #!/usr/bin/env bash
-#   Name: dockersearchs - Dockerfile CLI search and clone tool
+#   Name: dockerclone - Dockerfile CLI search and clone tool
 #   Version 1.0.0
 #   Written by: anouarbensaad.
 
 set -e
 
+## Settings File
+rc_file=""
 # Default options
 VERSION="1.0.0"
 INDEX=0
-DOCKER_HUB="https://hub.docker.com"
-OFF_ENDPOINT="/api/content/v1/products/images/"
-UNOFF_ENDPOINT="/v2/repositories/"
-USER_AGENT="Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:90.0) Gecko/20100101 Firefox/90.0"
 IMAGE_SELECTED=""
 VERSION_SELECTED=""
+SEARCH=""
 ARRAY=()
 ARRAY2=()
-
-# binding keys.
-UP="$(echo -e '\e[A')"
-DOWN="$(echo -e '\e[B')"
-ENTER="$(echo -e '\n')"
 
 # associative arrays.
 declare -A OFFICIAL_IMAGES
 declare -A ARR_VERSIONS
 
+## Locate setting file
+if [[ -f "${HOME}/.dockerclone_rc" ]];then
+    rc_file="${HOME}/.searchsploit_rc"
+elif [[ -f "${PWD}/.dockerclone_rc" ]];then
+    rc_file="${PWD}/.dockerclone_rc"
+elif [[ ! -f "${rc_file}" ]]; then
+  printf "\n   $(tput bold)$(tput setaf 1)%s$(tput sgr0)\n\n" "Could not find: rc_file ~ ${rc_file}"
+  exit 1
+fi
+
+## Use config file
+source "${rc_file}"
+
 # usage info
 usage() {
   cat <<EOF
-  Usage: hgo [options]
+  Usage: dockerclone [options]
   Options:
-    search                  Search image
-    --                      End of options
+    -s, --search            Search the image name (Default NGINX)
+    -n, --name              Specify image from searches.
+    -x, --examine           Examine (Preview Dockerfile) found.
+    -c  --clone             Clone (copies) the dockerfile to the current working directory"
+    -h, --help              This message.
+    -v, --version           Show version.
+    --                      End of options.
 EOF
 }
 
@@ -66,6 +78,7 @@ function parse_isOfficial() {
 function print_official_images() {
     if [[ ${#OFFICIAL_IMAGES[@]} -eq 0 ]];then
         printf "\n   $(tput bold)$(tput setaf 1)%s$(tput sgr0)\n\n" "No images found" 2>/dev/null
+        exit 1
     else
         printf "\n   $(tput bold)$(tput setaf 2)%s$(tput sgr0)\n\n" "Official Images Docker-Hub"
         for item in ${!OFFICIAL_IMAGES[@]}
@@ -79,10 +92,14 @@ function print_official_images() {
 # get dockerfile by
 function parse_tag_and_dockerfile() {
     selected="$1"
+    # if [[ ${#OFFICIAL_IMAGES} -eq 0 ]];then
+    #     printf "\n   $(tput bold)$(tput setaf 1)%s$(tput sgr0)\n\n" "Search for image first."
+    #     exit 1
+    # fi
     response=$(curl \
         --silent -A $USER_AGENT \
         -XGET \
-        -H "Content-Type: application/json" "${OFFICIAL_IMAGES[$selected]}/" | jq .full_description)
+        -H "Content-Type: application/json" "${OFFICIAL_IMAGES[$selected]}/" | jq .full_description 2>/dev/null)
     extract=$(echo -e $response | sed -e '/\[\(.*\)\].*Dockerfile.$/!d')
     for x in $extract
     do
@@ -94,24 +111,60 @@ function parse_tag_and_dockerfile() {
 }
 
 # preview dockerfile.
-function preview_dockerfile() {
+function examine_dockerfile() {
     selected_version="$1"
+    echo $selected_version
     curl --silent -XGET ${ARR_VERSIONS[$selected_version]} | less
 }
 
 # clone dockerfile.
 function mirror_dockerfile() {
-    selected_version="$1"
-    curl --silent -XGET ${ARR_VERSIONS[$selected_version]} --output ./"$selected_version.dockerfile"
+    selected_image="$1"
+    selected_version="$2"
+    curl --silent -XGET ${ARR_VERSIONS[$selected_version]} --output ./"$selected_image.$selected_version.dockerfile"
 }
 
-# check number of arguments.
-if [[ $# -ne 2 ]];then
-    usage
-fi
-
-if [[ "$1" == "search" ]]; then
-    search_images "$2"
-    parse_isOfficial
-    print_official_images
+# Parse options
+while [[ "$1" =~ ^- && ! "$1" == "--" ]]; do
+    case $1 in
+	-v | --version )
+	    echo "$VERSION"
+	    exit
+	    ;;
+	-s | --search )
+        SEARCH="$2"
+        search_images "$2"
+        parse_isOfficial
+        print_official_images
+	    shift;
+	    ;;
+	-n | --name )
+        IMAGE_SELECTED="$2"
+        parse_tag_and_dockerfile "$IMAGE_SELECTED"
+        shift;
+	    ;;
+	-x | --examine )
+        VERSION_SELECTED="$2"
+        echo $VERSION_SELECTED
+        examine_dockerfile "$VERSION_SELECTED"
+        shift;
+	    ;;
+    -c | --clone )
+        VERSION_SELECTED="$2"
+        mirror_dockerfile "$IMAGE_SELECTED" "$VERSION_SELECTED"
+        ;;
+	-h | --help )
+	    usage
+	    exit
+	    ;;
+	* )
+	    echo "abort: unknown argument" 1>&2
+	    exit 1
+    esac
+    shift
+done
+if [[ "$1" == "--" ]]; then shift; fi
+if [[ -z $SEARCH ]];then
+    printf "\n   $(tput bold)$(tput setaf 1)%s$(tput sgr0)\n\n" "You must search before set name of image." 2>/dev/null
+    exit 1
 fi

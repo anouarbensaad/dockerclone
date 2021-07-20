@@ -1,0 +1,6 @@
+##-- Program Settings.
+
+DOCKER_HUB="https://hub.docker.com"
+OFF_ENDPOINT="/api/content/v1/products/images/"
+UNOFF_ENDPOINT="/v2/repositories/"
+USER_AGENT="Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:90.0) Gecko/20100101 Firefox/90.0"
